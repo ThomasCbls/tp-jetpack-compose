@@ -32,8 +32,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -42,6 +40,8 @@ import androidx.compose.ui.unit.dp
 import com.example.tpjetpackcompose.ui.theme.TpJetpackComposeTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 // data
 data class ProductUi(
@@ -91,6 +91,44 @@ fun sampleProductOutOfStock(): ProductUi {
     )
 }
 
+class ProductCatalogViewModel : ViewModel() {
+    private val allProducts: List<ProductUi> = sampleProducts()
+    val categories: List<String> = sampleCategories()
+    var searchQuery by mutableStateOf("")
+        private set
+
+    fun onSearchQueryChange(newValue: String) {
+        searchQuery = newValue
+    }
+
+    var showOnlyInStock by mutableStateOf(false)
+        private set
+    fun onToggleStockFilter() {
+        showOnlyInStock = !showOnlyInStock
+    }
+
+    var favoriteProductIds by mutableStateOf(listOf<Int>())
+        private set
+    fun onFavoriteClick(productId: Int) {
+        favoriteProductIds = if (favoriteProductIds.contains(productId)) {
+            favoriteProductIds - productId
+        } else {
+            favoriteProductIds + productId
+        }
+    }
+
+    val filteredProducts: List<ProductUi>
+        get() = allProducts.filter { product ->
+            val matchesSearch =
+                product.title.contains(searchQuery, ignoreCase = true) ||
+                        product.brand.contains(searchQuery, ignoreCase = true) ||
+                        product.category.contains(searchQuery, ignoreCase = true)
+            val matchesStock =
+                !showOnlyInStock || product.stock > 0
+            matchesSearch && matchesStock
+        }
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -99,10 +137,8 @@ class MainActivity : ComponentActivity() {
             TpJetpackComposeTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     ProductCatalogContainer(
-                        products = sampleProducts(),
-                        categories = sampleCategories(),
                         onProductClick = {
-                            // Plus tard : ouvrir le détail du produit
+                            // à faire plus tard : détail du produit
                         },
                         modifier = Modifier.padding(innerPadding)
                     )
@@ -112,66 +148,26 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// Composable stateful : possède l'état de l'écran catalogue
+// Container : relie le ViewModel (qui possède l'état) à l'écran stateless
 @Composable
 fun ProductCatalogContainer(
-    products: List<ProductUi>,
-    categories: List<String>,
     onProductClick: (ProductUi) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    viewModel: ProductCatalogViewModel = viewModel()
 ) {
-    var searchQuery by rememberSaveable {
-        mutableStateOf("")
-    }
-    var showOnlyInStock by rememberSaveable {
-        mutableStateOf(false)
-    }
-    var favoriteProductIds by rememberSaveable {
-        mutableStateOf(listOf<Int>())
-    }
-
-    val filteredProducts = remember(products, searchQuery, showOnlyInStock) {
-        products.filter { product ->
-            val matchesSearch =
-                product.title.contains(searchQuery, ignoreCase = true) ||
-                        product.brand.contains(searchQuery, ignoreCase = true) ||
-                        product.category.contains(searchQuery, ignoreCase = true)
-
-            val matchesStock =
-                !showOnlyInStock || product.stock > 0
-
-            matchesSearch && matchesStock
-        }
-    }
-
-    fun toggleFavorite(productId: Int) {
-        favoriteProductIds = if (favoriteProductIds.contains(productId)) {
-            favoriteProductIds - productId
-        } else {
-            favoriteProductIds + productId
-        }
-    }
-
     ProductCatalogScreen(
-        products = filteredProducts,
-        categories = categories,
-        searchQuery = searchQuery,
-        onSearchQueryChange = { newValue ->
-            searchQuery = newValue
-        },
-        showOnlyInStock = showOnlyInStock,
-        onToggleStockFilter = {
-            showOnlyInStock = !showOnlyInStock
-        },
-        favoriteProductIds = favoriteProductIds,
-        onFavoriteClick = { productId ->
-            toggleFavorite(productId)
-        },
+        products = viewModel.filteredProducts,
+        categories = viewModel.categories,
+        searchQuery = viewModel.searchQuery,
+        onSearchQueryChange = viewModel::onSearchQueryChange,
+        showOnlyInStock = viewModel.showOnlyInStock,
+        onToggleStockFilter = viewModel::onToggleStockFilter,
+        favoriteProductIds = viewModel.favoriteProductIds,
+        onFavoriteClick = viewModel::onFavoriteClick,
         onProductClick = onProductClick,
         modifier = modifier
     )
 }
-
 // Composable stateless : affiche les données reçues et remonte les événements
 @Composable
 fun ProductCatalogScreen(
@@ -820,38 +816,11 @@ fun sampleProducts(): List<ProductUi> {
 
 @Preview(
     showBackground = true,
-    name = "Catalogue - Dark Theme"
-)
-@Composable
-fun ProductCatalogContainerDarkPreview() {
-    TpJetpackComposeTheme(darkTheme = true) {
-        ProductCatalogContainer(
-            products = sampleProducts(),
-            categories = sampleCategories(),
-            onProductClick = {}
-        )
-    }
-}
-
-@Preview(
-    showBackground = true,
     name = "Catalogue - Light Theme"
 )
 @Composable
-fun ProductCatalogContainerLightPreview() {
+fun ProductCatalogScreenLightPreview() {
     TpJetpackComposeTheme(darkTheme = false) {
-        ProductCatalogContainer(
-            products = sampleProducts(),
-            categories = sampleCategories(),
-            onProductClick = {}
-        )
-    }
-}
-
-@Preview(showBackground = true, name = "Catalogue - Stateless")
-@Composable
-fun ProductCatalogScreenStatelessPreview() {
-    TpJetpackComposeTheme {
         ProductCatalogScreen(
             products = sampleProducts(),
             categories = sampleCategories(),
@@ -860,6 +829,27 @@ fun ProductCatalogScreenStatelessPreview() {
             showOnlyInStock = false,
             onToggleStockFilter = {},
             favoriteProductIds = listOf(1),
+            onFavoriteClick = {},
+            onProductClick = {}
+        )
+    }
+}
+
+@Preview(
+    showBackground = true,
+    name = "Catalogue - Dark Theme"
+)
+@Composable
+fun ProductCatalogScreenDarkPreview() {
+    TpJetpackComposeTheme(darkTheme = true) {
+        ProductCatalogScreen(
+            products = sampleProducts(),
+            categories = sampleCategories(),
+            searchQuery = "audio",
+            onSearchQueryChange = {},
+            showOnlyInStock = true,
+            onToggleStockFilter = {},
+            favoriteProductIds = listOf(2),
             onFavoriteClick = {},
             onProductClick = {}
         )
